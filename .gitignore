@@ -1,0 +1,11 @@
+# vim swp files
+*.swp
+
+# compiled shader code
+vert.spv
+frag.spv
+
+# compiled program
+v
+
+README.html
