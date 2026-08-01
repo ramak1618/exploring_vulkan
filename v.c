@@ -1207,72 +1207,6 @@ int main() {
 
         vkUnmapMemory(globs.device, globs.vertex_buffer.memory);
     }
-    // Here we do many one time submits.. 
-    // Since it is outside the loop it cannot be a bottleneck
-    // plus image_count is usually a small number
-    // Did not bother to profile and check if it is worth it to do or not do this.
-    for(uint32_t i=0; i<globs.swapchain.image_count; i++) {
-        VkCommandBufferBeginInfo begin_info = {
-           .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-           .pNext = NULL,
-           .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-           .pInheritanceInfo = NULL,
-        };
-
-        (void) vkBeginCommandBuffer(globs.cmd_bufs[0], &begin_info);
-
-        VkImageMemoryBarrier2 barrier = {
-           .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-           .pNext = NULL,
-           .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
-           .srcAccessMask = VK_ACCESS_2_NONE,
-           .dstStageMask = VK_PIPELINE_STAGE_2_NONE, //VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-           .dstAccessMask = VK_ACCESS_2_NONE, // VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-           .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-           .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-           .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-           .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-           .image = globs.swapchain.images[i],
-           .subresourceRange = (VkImageSubresourceRange) {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        };
-
-        VkDependencyInfo dep_info = {
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .pNext = NULL,
-            .dependencyFlags = 0,
-            .memoryBarrierCount = 0,
-            .pMemoryBarriers = NULL,
-            .bufferMemoryBarrierCount = 0,
-            .pBufferMemoryBarriers = NULL,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &barrier,
-        };
-
-        vkCmdPipelineBarrier2(globs.cmd_bufs[0], &dep_info);
-        (void) vkEndCommandBuffer(globs.cmd_bufs[0]);
-
-        VkCommandBufferSubmitInfo cmd_buf_info = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-            .pNext = NULL,
-            .commandBuffer = globs.cmd_bufs[0],
-            .deviceMask = 0,
-        };
-
-        VkSubmitInfo2 submit_info = {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-            .pNext = NULL,
-            .flags = 0,
-            .waitSemaphoreInfoCount = 0,
-            .pWaitSemaphoreInfos = NULL,
-            .commandBufferInfoCount = 1,
-            .pCommandBufferInfos = &cmd_buf_info,
-            .signalSemaphoreInfoCount = 0,
-            .pSignalSemaphoreInfos = NULL,
-        };
-
-        vkQueueSubmit2(globs.queue, 1, &submit_info, NULL);
-        vkQueueWaitIdle(globs.queue);
-    }
 
     {
         VkImageViewCreateInfo create_info = {
@@ -1343,11 +1277,11 @@ int main() {
         VkImageMemoryBarrier2 color_attach_barrier = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
             .pNext = NULL,
-            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
             .srcAccessMask = VK_ACCESS_2_NONE,
             .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
