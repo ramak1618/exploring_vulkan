@@ -21,6 +21,9 @@
 
 #include <xkbcommon/xkbcommon.h>
 
+#include "event_queue.c" 
+#include "movement.c"
+
 const float pi = 3.1415926535f;
 
 struct window {
@@ -115,6 +118,8 @@ struct keyboard_data {
 
     struct xkb_keymap* keymap;
     bool failed;
+
+    struct event_queue evqueue;
 };
 
 void keyboard_keymap(void* data, struct wl_keyboard* keyboard, enum wl_keyboard_keymap_format format, int fd, uint32_t size) {
@@ -173,14 +178,20 @@ void keyboard_modifiers(void* data, struct wl_keyboard* keyboard, uint32_t seria
 void keyboard_key(void* data, struct wl_keyboard* keyboard, uint32_t serial, uint32_t time, uint32_t key, enum wl_keyboard_key_state state) {
     (void) keyboard;
     (void) serial;
-    (void) time;
-    (void) state;
+    (void) time; // The reason to not use this time is that the base of this time is unknown and hard to sync with CLOCK_MONOTONIC
 
     struct keyboard_data* stuff = data;
 
-    xkb_keysym_t sym = xkb_state_key_get_one_sym(stuff->state, key+8);
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
 
-    (void) sym; //printf("%d %d\n", sym, state);
+
+    struct event e = {
+        .sym = xkb_state_key_get_one_sym(stuff->state, key+8),
+        .state = state,
+        .time = ts,
+    };
+    event_enqueue(&stuff->evqueue, &e);
 }
 
 void keyboard_leave(void* data, struct wl_keyboard* keyboard, uint32_t serial, struct wl_surface* surface) {
@@ -892,6 +903,10 @@ int main() {
             .modifiers = keyboard_modifiers,
             .repeat_info = keyboard_repeat_info,
         };
+
+        globs.keydata.evqueue.front = 0;
+        globs.keydata.evqueue.rear = 0;
+
         wl_keyboard_add_listener(globs.wnd.keyboard, &globs.wnd.keyboard_listener, &globs.keydata);
     }
 
@@ -906,6 +921,14 @@ int main() {
     float vp_ws = 2.0f / vp_w;
     float vp_hs = 2.0f / vp_h;
     
+    //float aaaa = 1/sqrt(2);
+    struct camera cam = {
+        {0.f, 0.f, -3.f},
+        {1.f, 0.f, 0.f},
+        {0.f, 1.f, 0.f},
+        {0.f, 0.f, 1.f}
+    };
+
     float camera_data[] = {
         1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
@@ -1235,20 +1258,53 @@ int main() {
     clock_gettime(CLOCK_MONOTONIC, &init_time);
     struct timespec time = init_time;
 
-    float target_spf = 1 / 60.f;
+    float target_spf = 1 / 120.f;
     struct timespec spf = {(int32_t)target_spf, (int32_t) (target_spf * 1e9) };
+
+
+    /** KEY STATES **/
+    bool key_heldmap[NUM_CAM_MOVES] = {0};
 
     while(globs.wnd.running && wl_display_dispatch_pending(globs.wnd.display) != -1) {
         // calculate FPS
         struct timespec frame_start_time;
         clock_gettime(CLOCK_MONOTONIC, &frame_start_time);
 
-        //float fps = 1.0f / (frame_start_time.tv_sec - time.tv_sec + (frame_start_time.tv_nsec - time.tv_nsec)/1e9f);
-        //printf("fps: %f\n", fps);
+        float delta_time = frame_start_time.tv_sec - time.tv_sec + (frame_start_time.tv_nsec - time.tv_nsec)/1e9f;
+        float fps = 1.0f / delta_time;
+        printf("fps: %f\n", fps);
 
         time = frame_start_time;
 
+        // Process events
+        while(!event_queue_is_empty(&globs.keydata.evqueue)) {
+            struct event e;
+            event_dequeue(&globs.keydata.evqueue, &e);
+            enum camera_movement movement_type = keymap(e.sym);
+
+            if(movement_type == MOVEMENT_NONE)
+                continue;
+
+            if(e.state == WL_KEYBOARD_KEY_STATE_PRESSED)
+                key_heldmap[movement_type] = true;
+            if(e.state == WL_KEYBOARD_KEY_STATE_RELEASED) {
+                key_heldmap[movement_type] = false;
+                update_camera(&cam, movement_type, 1.f, time.tv_sec - e.time.tv_sec + (time.tv_nsec - e.time.tv_nsec)/1e9f);
+            }
+        }
+        for(uint32_t i=0; i<NUM_CAM_MOVES; i++) {
+            if(key_heldmap[i]) {
+                update_camera(&cam, i, 1.f, delta_time);
+            }
+        }
+
+        build_view_matrix(camera_data, &cam);
+
+        printf("(%f, %f, %f)\n", cam.pos[0], cam.pos[1], cam.pos[2]);
+        printf("(%f, %f, %f)r\n(%f, %f, %f)d\n(%f, %f, %f)f\n", cam.right[0], cam.right[1], cam.right[2], cam.down[0], cam.down[1], cam.down[2], cam.forward[0], cam.forward[1], cam.forward[2]);
+
         // Update buffers
+        /*
         float w = 1.f;
         float t =  time.tv_sec - init_time.tv_sec + (time.tv_nsec - init_time.tv_nsec)/1e9f;
 
@@ -1264,6 +1320,7 @@ int main() {
             -cam_x*cos(w*t) -cam_z*sin(w*t), -cam_y,  cam_x*sin(w*t) - cam_z*cos(w*t),         1.f,
         };
         memcpy(camera_data, view_mat, 4*16);
+        */
 
         // Wait for current frame to be free..
         (void) vkWaitForFences(globs.device, 1, &globs.frame_finished_fences[frame_index], VK_TRUE, UINT64_MAX);
