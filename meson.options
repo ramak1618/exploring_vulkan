@@ -1,0 +1,5 @@
+option('profile',
+        type: 'combo',
+        choices: ['asan', 'debug', 'opt'],
+        value: 'debug', #default value
+)

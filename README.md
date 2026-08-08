@@ -13,6 +13,28 @@ You might also find certain things partially implemented, as I have encountered 
 
 Hopefully by next commit the validation layers have stopped shouting.
 
+Building
+--------
+If you want to build this yourself, you can use meson (1.1+).
+
+Use:
+
+`meson setup <build directory> -Dprofile=opt` for optimized build
+
+`meson setup <build directory> -Dprofile=debug` for debug build (default)
+
+`meson setup <build directory> -Dprofile=asan` for address-sanitized build
+
+
+Then:
+
+`meson compile -C <build_directory>` for compiling.
+
+
+Run:
+
+`<build_directory>/v`
+
 License
 -------
 Licensed under [CC0 License][licenselink]

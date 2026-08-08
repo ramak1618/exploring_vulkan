@@ -26,6 +26,10 @@
 
 const float pi = 3.1415926535f;
 
+#ifndef SHADER_DIR
+#define SHADER_DIR "./"
+#endif
+
 struct window {
     struct wl_display* display;
     struct wl_registry* registry;
@@ -997,7 +1001,13 @@ int main() {
             .size = camera_data_size,
         };
 
-        if(!create_graphics_pipeline(globs.device, "vert.spv", "frag.spv", &globs.swapchain, &vertex_input_state, &push_constant_range, &globs.gripeline)) {
+        char vert_fpath[256];
+        char frag_fpath[256];
+
+        snprintf(vert_fpath, 256, "%s%s", SHADER_DIR, "vert.spv");
+        snprintf(frag_fpath, 256, "%s%s", SHADER_DIR, "frag.spv");
+
+        if(!create_graphics_pipeline(globs.device, vert_fpath, frag_fpath, &globs.swapchain, &vertex_input_state, &push_constant_range, &globs.gripeline)) {
             destroy_globals(&globs);
             return 1;
         }
