@@ -951,16 +951,6 @@ int main() {
     };
     uint32_t camera_data_size = 32 * 4;
 
-    // Vertex Buffer
-    /*
-    float vertex_data[] = {
-        -0.5f, -0.5f, 1.0f,     1.0f, 0.0f, 0.0f,
-         0.5f, -0.5f, 1.0f,     0.0f, 1.0f, 0.0f,
-         0.5f,  0.5f, 1.0f,     0.0f, 0.0f, 1.0f,
-        -0.5f,  0.5f, 1.0f,     1.0f, 1.0f, 1.0f,
-        -1.5f, -1.5f, 3.0f,     1.0f, 1.0f, 0.0f,
-    };
-    */
     uint32_t vertex_size = 6*4;
     uint32_t num_vertices = 1000 * 10;
     uint32_t vertex_data_size = num_vertices * vertex_size;
@@ -1228,7 +1218,6 @@ int main() {
         void* raw_memp;
 
         vkMapMemory(globs.device, globs.vertex_buffer.memory, 0, vertex_data_size, 0, &raw_memp);
-        //  memcpy(raw_memp, vertex_data, vertex_data_size);
 
         float* data = raw_memp;
         for(uint32_t i=0; i<num_vertices; i++) {
@@ -1317,25 +1306,6 @@ int main() {
 
         printf("(%f, %f, %f)\n", cam.pos[0], cam.pos[1], cam.pos[2]);
         printf("(%f, %f, %f)r\n(%f, %f, %f)d\n(%f, %f, %f)f\n", cam.right[0], cam.right[1], cam.right[2], cam.down[0], cam.down[1], cam.down[2], cam.forward[0], cam.forward[1], cam.forward[2]);
-
-        // Update buffers
-        /*
-        float w = 1.f;
-        float t =  time.tv_sec - init_time.tv_sec + (time.tv_nsec - init_time.tv_nsec)/1e9f;
-
-        float cam_x = 3*sin(w*t);
-        float cam_y = 0.f;
-        float cam_z = -3*cos(w*t);
-
-
-        float view_mat[] = {
-               cos(w*t),   0.f,              -sin(w*t),           0.f,
-                 0.f,      1.f,                 0.f,              0.f,
-               sin(w*t),   0.f,               cos(w*t),           0.f,
-            -cam_x*cos(w*t) -cam_z*sin(w*t), -cam_y,  cam_x*sin(w*t) - cam_z*cos(w*t),         1.f,
-        };
-        memcpy(camera_data, view_mat, 4*16);
-        */
 
         // Wait for current frame to be free..
         (void) vkWaitForFences(globs.device, 1, &globs.frame_finished_fences[frame_index], VK_TRUE, UINT64_MAX);
