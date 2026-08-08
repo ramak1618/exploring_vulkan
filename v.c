@@ -691,9 +691,14 @@ VkBool32 debug_callback(VkDebugUtilsMessageSeverityFlagsEXT messageSeverity, VkD
 
 int main() {
     struct globals globs = {0};
-    bool enabled_validation_layers = true;
-    pcg32_random_t rng;
 
+#ifdef DISABLE_VALIDATION
+    const bool enabled_validation_layers = false;
+#else
+    const bool enabled_validation_layers = true;
+#endif
+
+    pcg32_random_t rng;
     pcg32_srandom_r(&rng, 31415926, 1618);
 
     // boring stuff

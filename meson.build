@@ -11,6 +11,7 @@ elif profile == 'debug'
     target_options = ['buildtype=debug']
 elif profile == 'opt'
     target_options = ['buildtype=release']
+    add_project_arguments('-DDISABLE_VALIDATION', language: 'c')
 endif
 
 cc = meson.get_compiler('c')
