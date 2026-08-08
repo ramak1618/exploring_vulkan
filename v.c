@@ -952,7 +952,7 @@ int main() {
     uint32_t camera_data_size = 32 * 4;
 
     uint32_t vertex_size = 6*4;
-    uint32_t num_vertices = 1000 * 10;
+    uint32_t num_vertices = 1000 * 100;
     uint32_t vertex_data_size = num_vertices * vertex_size;
  
     // REMEMBER TO UPDATE VERTEX SHADER CHANGES HERE
@@ -1220,16 +1220,31 @@ int main() {
         vkMapMemory(globs.device, globs.vertex_buffer.memory, 0, vertex_data_size, 0, &raw_memp);
 
         float* data = raw_memp;
+        
+        /*
+        float R = 0.75f;
+        float a = 1.5f;
+        */
+
+        /*
+        float R = 1.f;
+        float a = -1.f;
+        */
+
+        
+        float R = 2.0f;
+        float a = 1.0f;
+        
         for(uint32_t i=0; i<num_vertices; i++) {
             float theta = uniform_unit_float(&rng) * 2.f * pi;
-            float phi = (uniform_unit_float(&rng)-0.5f) *2.f;
+            float phi =  uniform_unit_float(&rng) * 2.f * pi;
 
-            data[6*i + 0] =  cos(theta) ;
-            data[6*i + 1] =  sin(theta);
-            data[6*i + 2] =  phi;
-            data[6*i + 3] = (data[6*i + 0] + 1.f) * 0.5f;
-            data[6*i + 4] = (data[6*i + 1] + 1.f) * 0.5f;
-            data[6*i + 5] = (data[6*i + 2] + 1.f) * 0.5f;
+            data[6*i + 0] =  R*cosf(phi) + a*cosf(theta)*cosf(phi);
+            data[6*i + 1] =  R*sinf(phi) + a*cosf(theta)*sinf(phi);
+            data[6*i + 2] =  a*sinf(theta);
+            data[6*i + 3] =  log1pf( (cosf(phi)*cosf(theta) + 1.f) * 0.5f );
+            data[6*i + 4] =  log1pf( (sinf(phi)*cosf(theta) + 1.f) * 0.5f );
+            data[6*i + 5] =  log1pf( (sinf(theta) + 1.f) * 0.5f ) ;
         }
 
         vkUnmapMemory(globs.device, globs.vertex_buffer.memory);
