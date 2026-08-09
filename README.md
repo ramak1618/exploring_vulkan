@@ -39,6 +39,21 @@ Run:
 
 `<build_directory>/v`
 
+
+Input Controls
+--------------
+You can move the camera using your keyboard.
+
+I know rotation can be hard to understand but I hope you understand atleast one of the descriptions given.
+
+| Keybind       | Description                              | Extra Description                               | Nerdy Description                     |
+| :-------------| :----------------------------------------| :---------------------------------------------- |:--------------------------------------|
+| W/A/S/D &nbsp;| moving forward/left/backward/right &nbsp;|                                           &nbsp;|                                       |
+| Q/E     &nbsp;| moving up/down                     &nbsp;|                                           &nbsp;|                                       |
+| J/L     &nbsp;| turning left/right                 &nbsp;| Nodding no kinda motion                   &nbsp;| Rotation about up/down axis           |
+| I/K     &nbsp;| turning up/down                    &nbsp;| Nodding yes kinda motion                  &nbsp;| Rotation about right/left axis        |
+| U/O     &nbsp;| rolling the camera                 &nbsp;| Tilting your head left/right kinda motion &nbsp;| Rotation about forward/backward axis  |
+
 License
 -------
 Licensed under [CC0 License][licenselink]
