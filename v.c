@@ -238,11 +238,9 @@ struct vk_swapchain {
     VkImageView* image_views;
 };
 
-bool create_swapchain(VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR vk_surface, uint32_t width, uint32_t height, struct vk_swapchain* swapchain) {
+bool create_swapchain(VkPhysicalDevice physical_device, VkDevice device, uint32_t queue_family_index, VkSurfaceKHR vk_surface, uint32_t width, uint32_t height, struct vk_swapchain* swapchain) {
     VkSurfaceCapabilitiesKHR surface_caps = {0};
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, vk_surface, &surface_caps);
-
-    uint32_t queue_fam = 0;
 
     VkSwapchainCreateInfoKHR create_info = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -257,7 +255,7 @@ bool create_swapchain(VkPhysicalDevice physical_device, VkDevice device, VkSurfa
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &queue_fam,
+        .pQueueFamilyIndices = &queue_family_index,
         .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .presentMode = VK_PRESENT_MODE_MAILBOX_KHR,
@@ -537,8 +535,7 @@ struct vk_buffer {
     VkDeviceMemory memory;
 };
 
-bool create_buffer(VkDevice device, VkDeviceSize size, VkBufferUsageFlags usage, struct vk_buffer* buffer) {
-    uint32_t queue_fams = 0;
+bool create_buffer(VkDevice device, uint32_t queue_family_index, VkDeviceSize size, VkBufferUsageFlags usage, struct vk_buffer* buffer) {
     VkBufferCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .pNext = NULL,
@@ -547,7 +544,7 @@ bool create_buffer(VkDevice device, VkDeviceSize size, VkBufferUsageFlags usage,
         .usage = usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &queue_fams,
+        .pQueueFamilyIndices = &queue_family_index,
     };
 
     if(vkCreateBuffer(device, &create_info, NULL, &buffer->buffer) != VK_SUCCESS) {
@@ -592,6 +589,7 @@ struct globals {
     VkInstance instance;
     VkDebugUtilsMessengerEXT debug_messenger;
     VkPhysicalDevice physical_device;
+    uint32_t queue_family_index;
     VkDevice device;
     VkQueue queue;
     struct window wnd;
@@ -750,6 +748,10 @@ int main() {
                 fprintf(stderr, "Validation layers not present (simply disable it)\n");
                 destroy_globals(&globs);
                 return 1;
+            case VK_ERROR_INCOMPATIBLE_DRIVER:
+                fprintf(stderr, "Vulkan 1.4 is not supported by your driver.. (check if your drivers are up to date)\n");
+                destroy_globals(&globs);
+                return 1;
             case VK_SUCCESS:
                 break;
             default:
@@ -771,70 +773,6 @@ int main() {
                return 1;
             } 
         }
-
-        uint32_t device_count = 1;
-        vkEnumeratePhysicalDevices(globs.instance, &device_count, &globs.physical_device);
-        if(device_count == 0) {
-            fprintf(stderr, "No vulkan supported GPUs found!\n");
-            destroy_globals(&globs);
-            return 1;
-        }
-    }
-
-    {
-        VkQueueFamilyProperties queue_props;
-        uint32_t queue_count = 1;
-        vkGetPhysicalDeviceQueueFamilyProperties(globs.physical_device, &queue_count, &queue_props);
-        if(!(queue_props.queueFlags & VK_QUEUE_GRAPHICS_BIT) || !(queue_props.queueFlags & VK_QUEUE_TRANSFER_BIT)) {
-            fprintf(stderr, "Queue with family index 0 does not support graphics and transfer\n");
-            destroy_globals(&globs);
-            return 1;
-        }
-
-        float one = 1.f;
-        VkDeviceQueueCreateInfo queue_info = {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .pNext = NULL,
-            .flags = 0,
-            .queueFamilyIndex = 0,
-            .queueCount = 1,
-            .pQueuePriorities = &one,
-        };
-
-        const char* extensions[] = {"VK_KHR_swapchain"};
-
-        VkPhysicalDeviceFeatures features = {0};
-
-        VkPhysicalDeviceSynchronization2Features syncfeats = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
-            .pNext = NULL,
-            .synchronization2 = VK_TRUE,
-        };
-
-        VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
-            .pNext = &syncfeats,
-            .dynamicRendering = VK_TRUE,
-        };
-
-        VkDeviceCreateInfo create_info = {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &dynamic_rendering,
-            .flags = 0,
-            .queueCreateInfoCount = 1,
-            .pQueueCreateInfos = &queue_info,
-            .enabledExtensionCount = 1,
-            .ppEnabledExtensionNames = extensions,
-            .pEnabledFeatures = &features,
-        };
-
-        if(vkCreateDevice(globs.physical_device, &create_info, NULL, &globs.device) != VK_SUCCESS) {
-            fprintf(stderr, "device create error!\n");
-            destroy_globals(&globs);
-            return 1;
-        }
-
-        vkGetDeviceQueue(globs.device, 0, 0, &globs.queue);
     }
 
     {
@@ -888,10 +826,6 @@ int main() {
             return 1;
         }
 
-        if(!create_swapchain(globs.physical_device, globs.device, globs.vk_surface, 800, 600, &globs.swapchain)) {
-            destroy_globals(&globs);
-            return 1;
-        }
     }    
 
     // Keyboard:
@@ -917,6 +851,170 @@ int main() {
         globs.keydata.evqueue.rear = 0;
 
         wl_keyboard_add_listener(globs.wnd.keyboard, &globs.wnd.keyboard_listener, &globs.keydata);
+    }
+
+    // Pick Physical Device
+    {
+        uint32_t device_count = 0;
+        vkEnumeratePhysicalDevices(globs.instance, &device_count, NULL);
+        if(device_count == 0) {
+            fprintf(stderr, "No GPUs that support vulkan found!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+        VkPhysicalDevice* physical_devices = malloc(sizeof(VkPhysicalDevice) * device_count);
+        vkEnumeratePhysicalDevices(globs.instance, &device_count, physical_devices);
+
+        VkPhysicalDeviceProperties2* dev_props = malloc(sizeof(VkPhysicalDeviceProperties2) * device_count);
+        int32_t* scores = malloc(sizeof(int32_t) * device_count);
+        int32_t* qfi = malloc(sizeof(uint32_t) * device_count);
+
+        for(uint32_t i=0; i<device_count; i++) {
+            scores[i] = 0;
+
+            dev_props[i] = (VkPhysicalDeviceProperties2) {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                .pNext = NULL,
+                .properties = (VkPhysicalDeviceProperties) {0},
+            };
+            vkGetPhysicalDeviceProperties2(physical_devices[i], &dev_props[i]);
+
+            // selecting the GPU
+            if(dev_props[i].properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                scores[i] += 1000; // Discrete GPU >>> Integrated GPU
+            }
+
+            // if API version is < 1.4, we cant use it..
+            if(dev_props[i].properties.apiVersion < VK_API_VERSION_1_4) {
+                scores[i] = -1;
+                printf("Queried Device: %s does not support Vulkan 1.4.\n", dev_props[i].properties.deviceName);
+                continue;
+            }
+
+            // Make sure the graphics card has a queue that supports GRAPHICS AND TRANSFER and can present too.
+            uint32_t qfam_count; 
+            vkGetPhysicalDeviceQueueFamilyProperties2(physical_devices[i], &qfam_count, NULL);
+            VkQueueFamilyProperties2* qfamprops = malloc(sizeof(VkQueueFamilyProperties2) * qfam_count);
+            for(uint32_t j=0; j<qfam_count; j++) {
+                qfamprops[j] = (VkQueueFamilyProperties2) {
+                    .sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2,
+                    .pNext = NULL,
+                    .queueFamilyProperties = (VkQueueFamilyProperties) {0},
+                };
+            }
+            vkGetPhysicalDeviceQueueFamilyProperties2(physical_devices[i], &qfam_count, qfamprops);
+
+            qfi[i] = -1;
+            for(uint32_t j=0; j<qfam_count; j++) {
+                if( !(qfamprops[j].queueFamilyProperties.queueFlags & VK_QUEUE_GRAPHICS_BIT) || !(qfamprops[j].queueFamilyProperties.queueFlags & VK_QUEUE_TRANSFER_BIT) ) {
+                    continue;
+                }
+                VkBool32 present_support;
+                (void) vkGetPhysicalDeviceSurfaceSupportKHR(physical_devices[i], j, globs.vk_surface, &present_support);
+                if(present_support == VK_FALSE)
+                    continue;
+
+                // if reached here, it means that this queue is OK to use
+                    qfi[i] = j;
+                    break;
+                // endif
+            }
+
+            if(qfi[i] == -1) {
+                scores[i] = -1;
+                printf("Queried Device: %s does not have a Queue Family that supports both GRAPHICS and TRANSFER operations along with present support\n", dev_props[i].properties.deviceName);
+                continue;
+            }
+
+            free(qfamprops);
+        }
+
+        // select the GPU with highest non-negative score
+        int32_t idx = -1;
+        for(uint32_t i=0; i<device_count; i++) {
+            if(idx == -1 && scores[i] >= 0) {
+                idx = i;
+                continue;
+            }
+            if(scores[i] > scores[idx]) {
+                idx = i;
+                continue;
+            }
+        }
+
+        if(idx == -1) {
+            fprintf(stderr, "No suitable GPU found!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+
+        globs.physical_device = physical_devices[idx];
+        globs.queue_family_index = qfi[idx];
+
+        printf("Chosen Physical Device: %s\n", dev_props[idx].properties.deviceName);
+        printf("Press ENTER to continue");
+        
+        char dummy;
+        fread(&dummy, 1, 1, stdin);
+
+        free(dev_props);
+        free(scores);
+        free(qfi);
+        free(physical_devices);
+    }
+
+    // Create Device
+    {
+        float one = 1.f;
+        VkDeviceQueueCreateInfo queue_info = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .queueFamilyIndex = globs.queue_family_index,
+            .queueCount = 1,
+            .pQueuePriorities = &one,
+        };
+
+        const char* extensions[] = {"VK_KHR_swapchain"};
+
+        VkPhysicalDeviceFeatures features = {0};
+
+        VkPhysicalDeviceSynchronization2Features syncfeats = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+            .pNext = NULL,
+            .synchronization2 = VK_TRUE,
+        };
+
+        VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+            .pNext = &syncfeats,
+            .dynamicRendering = VK_TRUE,
+        };
+
+        VkDeviceCreateInfo create_info = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pNext = &dynamic_rendering,
+            .flags = 0,
+            .queueCreateInfoCount = 1,
+            .pQueueCreateInfos = &queue_info,
+            .enabledExtensionCount = 1,
+            .ppEnabledExtensionNames = extensions,
+            .pEnabledFeatures = &features,
+        };
+
+        if(vkCreateDevice(globs.physical_device, &create_info, NULL, &globs.device) != VK_SUCCESS) {
+            fprintf(stderr, "device create error!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+
+        vkGetDeviceQueue(globs.device, globs.queue_family_index, 0, &globs.queue);
+    }
+
+    
+    if(!create_swapchain(globs.physical_device, globs.device, globs.queue_family_index, globs.vk_surface, 800, 600, &globs.swapchain)) {
+        destroy_globals(&globs);
+        return 1;
     }
 
     // Camera
@@ -1013,7 +1111,7 @@ int main() {
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .pNext = NULL,
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-            .queueFamilyIndex = 0,
+            .queueFamilyIndex = globs.queue_family_index,
         };
         vkCreateCommandPool(globs.device, &create_info, NULL, &globs.command_pool);
 
@@ -1101,7 +1199,6 @@ int main() {
 
     // create depth image buffer
     {
-        uint32_t queue_fam = 0;
         VkImageCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .pNext = NULL,
@@ -1116,7 +1213,7 @@ int main() {
             .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
             .queueFamilyIndexCount = 1,
-            .pQueueFamilyIndices = &queue_fam,
+            .pQueueFamilyIndices = &globs.queue_family_index,
             .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         };
 
@@ -1209,7 +1306,7 @@ int main() {
 
     // create buffers
     {
-        if(!create_buffer(globs.device, vertex_data_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &globs.vertex_buffer)) {
+        if(!create_buffer(globs.device, globs.queue_family_index, vertex_data_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &globs.vertex_buffer)) {
             fprintf(stderr, "vertex buffer create error!\n");
             destroy_globals(&globs);
             return 1;
@@ -1230,11 +1327,10 @@ int main() {
         float R = 1.f;
         float a = -1.f;
         */
-
         
         float R = 2.0f;
         float a = 1.0f;
-        
+
         for(uint32_t i=0; i<num_vertices; i++) {
             float theta = uniform_unit_float(&rng) * 2.f * pi;
             float phi =  uniform_unit_float(&rng) * 2.f * pi;

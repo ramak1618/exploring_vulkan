@@ -2,9 +2,13 @@ About
 -----
 This is a project exploring Vulkan in C.
 
-Currently the program works only if you are on linux + wayland and the first queue family exposed by the first GPU listed by your driver supports both graphics and presentation.
-(I will decide to make it cross-GPU atleast, in future)
-Also make sure your GPU driver supports Vulkan 1.4.
+Currently the program works only if you are on linux + wayland.
+Also make sure your GPU driver supports Vulkan 1.4 and have vulkan 1.4 libs installed.
+
+If your program crashes, there is a 99.99% chance I messed up while trying to make the program work for any GPU.
+(Previously, I hard-coded some values without querying them because I know about my GPU)
+
+In future I will implement a feature that also lets you manually select a GPU (hopefully).
 
 The code looks bad because I am actively learning while writing the program, and haven't bothered to refactor in the slightest.
 Yes, refactoring is good, but it's a lot of unnecessary work when you don't really know what you are going to do.
