@@ -592,6 +592,10 @@ struct globals {
     VkImage depth_buffer;
     VkImageView depth_view;
     VkDeviceMemory depth_mem;
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorPool descriptor_pool;
+    VkDescriptorSet* descriptor_sets;
+    struct vk_buffer camera_buffer;
 };
 
 void destroy_globals(struct globals* stuff) {
@@ -605,6 +609,7 @@ void destroy_globals(struct globals* stuff) {
         vkDestroyImage(stuff->device, stuff->depth_buffer, NULL);
 
     destroy_buffer(stuff->device, &stuff->vertex_buffer);
+    destroy_buffer(stuff->device, &stuff->camera_buffer);
 
     if(stuff->image_available_semaphores) {
         for(uint32_t i=0; i<stuff->frames_in_flight; i++) {
@@ -639,6 +644,15 @@ void destroy_globals(struct globals* stuff) {
 
     if(stuff->gripeline_layout) 
         vkDestroyPipelineLayout(stuff->device, stuff->gripeline_layout, NULL);
+
+    if(stuff->descriptor_pool)
+        vkDestroyDescriptorPool(stuff->device, stuff->descriptor_pool, NULL);
+
+    if(stuff->descriptor_sets)
+        free(stuff->descriptor_sets);
+
+    if(stuff->descriptor_set_layout)
+        vkDestroyDescriptorSetLayout(stuff->device, stuff->descriptor_set_layout, NULL);
 
     destroy_swapchain(stuff->device, &stuff->swapchain);
 
@@ -1062,8 +1076,8 @@ int main() {
     uint32_t num_vertices = 1000 * 100;
     uint32_t vertex_data_size = num_vertices * vertex_size;
  
-    // REMEMBER TO UPDATE VERTEX SHADER CHANGES HERE
     {
+        // REMEMBER TO UPDATE VERTEX SHADER CHANGES HERE
         VkVertexInputBindingDescription vertex_binding_desc[] = {
             {
                 .binding = 0,
@@ -1097,10 +1111,36 @@ int main() {
             .pVertexAttributeDescriptions = vertex_attr_desc,
         };
 
+        // REMEMBER TO UPDATE DESCRIPTOR LAYOUT CHANGES HERE
+        VkDescriptorSetLayoutBinding dsl_bindings[] = {
+            // camera buffer binding
+            {
+                .binding = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1, /* one camera object */
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                .pImmutableSamplers = NULL,
+            },
+        };
+        VkDescriptorSetLayoutCreateInfo dsl_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .bindingCount = 1,
+            .pBindings = dsl_bindings,
+        };
+
+        if(vkCreateDescriptorSetLayout(globs.device, &dsl_info, NULL, &globs.descriptor_set_layout) != VK_SUCCESS) {
+            fprintf(stderr, "Could not create descriptor set layout!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+
+        // REMEMBER TO UPDATE PUSH CONSTANT CHANGES HERE
         VkPushConstantRange push_constant_range = {
-            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            .stageFlags = 0, 
             .offset = 0,
-            .size = camera_data_size,
+            .size = 0, 
         };
 
         char vert_fpath[256];
@@ -1113,9 +1153,9 @@ int main() {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .pNext = NULL,
             .flags = 0,
-            .setLayoutCount = 0,
-            .pSetLayouts = NULL,
-            .pushConstantRangeCount = 1,
+            .setLayoutCount = 1,
+            .pSetLayouts = &globs.descriptor_set_layout,
+            .pushConstantRangeCount = 0,
             .pPushConstantRanges = &push_constant_range,
         };
 
@@ -1339,7 +1379,7 @@ int main() {
         vkQueueWaitIdle(globs.queue);
     }
 
-    // create buffers
+    // vertex buffers
     {
         if(!create_buffer(globs.device, globs.host_coherent_mask, globs.host_cached_mask, globs.queue_family_index, vertex_data_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &globs.vertex_buffer)) {
             fprintf(stderr, "vertex buffer create error!\n");
@@ -1381,6 +1421,85 @@ int main() {
         vkUnmapMemory(globs.device, globs.vertex_buffer.memory);
     }
 
+    // descriptor pool
+    {
+        VkDescriptorPoolSize pool_sizes[] = {
+            {
+                .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = globs.frames_in_flight,
+            },
+        };
+
+        VkDescriptorPoolCreateInfo descriptor_pool_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .maxSets = globs.frames_in_flight,
+            .poolSizeCount = 1,
+            .pPoolSizes = pool_sizes,
+        };
+
+        if(vkCreateDescriptorPool(globs.device, &descriptor_pool_info, NULL, &globs.descriptor_pool) != VK_SUCCESS) {
+            fprintf(stderr, "Could not create descriptor pool!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+
+        globs.descriptor_sets = malloc(sizeof(VkDescriptorSet) * globs.frames_in_flight);
+        if(!globs.descriptor_sets) {
+            fprintf(stderr, "malloc error while allocating descriptor set handles!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+
+        VkDescriptorSetLayout ds_layouts[] = {globs.descriptor_set_layout, globs.descriptor_set_layout};
+        VkDescriptorSetAllocateInfo dsa_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .pNext = NULL,
+            .descriptorPool = globs.descriptor_pool,
+            .descriptorSetCount = globs.frames_in_flight,
+            .pSetLayouts = ds_layouts,
+        };
+
+        if(vkAllocateDescriptorSets(globs.device, &dsa_info, globs.descriptor_sets) != VK_SUCCESS) {
+            fprintf(stderr, "Could not allocate descriptor sets!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+    }
+
+    // Uniform buffers
+    {
+        if(!create_buffer(globs.device, globs.host_coherent_mask, globs.host_cached_mask, globs.queue_family_index, globs.frames_in_flight * camera_data_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &globs.camera_buffer)) {
+            fprintf(stderr, "vertex buffer create error!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+
+        for(uint32_t i=0; i<globs.frames_in_flight; i++) {
+            VkDescriptorBufferInfo buffer_info = {
+                .buffer = globs.camera_buffer.buffer,
+                .offset = camera_data_size * i,
+                .range = camera_data_size,
+            };
+
+            VkWriteDescriptorSet write_ds = {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = NULL,
+                .dstSet = globs.descriptor_sets[i],
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pImageInfo = NULL,
+                .pBufferInfo = &buffer_info,
+                .pTexelBufferView = NULL,
+            };
+
+            vkUpdateDescriptorSets(globs.device, 1, &write_ds, 0, NULL);
+        }
+    }
+
     {
         VkImageViewCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -1415,6 +1534,11 @@ int main() {
     /** KEY STATES **/
     bool key_heldmap[NUM_CAM_MOVES] = {0};
 
+    void* rawp_camera_buffer = NULL;
+    vkMapMemory(globs.device, globs.camera_buffer.memory, 0, camera_data_size * globs.frames_in_flight, 0, &rawp_camera_buffer);
+    for(uint32_t i=0; i<globs.frames_in_flight; i++)
+        memcpy((uint8_t*)(rawp_camera_buffer)+i*camera_data_size, camera_data, camera_data_size);
+
     while(globs.wnd.running && wl_display_dispatch_pending(globs.wnd.display) != -1) {
         // calculate FPS
         struct timespec frame_start_time;
@@ -1448,7 +1572,8 @@ int main() {
             }
         }
 
-        build_view_matrix(camera_data, &cam);
+        float* camera_data_pointer = (float*)rawp_camera_buffer + (camera_data_size/4)*frame_index;
+        build_view_matrix(camera_data_pointer, &cam);
 
         //printf("(%f, %f, %f)\n", cam.pos[0], cam.pos[1], cam.pos[2]);
         //printf("(%f, %f, %f)r\n(%f, %f, %f)d\n(%f, %f, %f)f\n", cam.right[0], cam.right[1], cam.right[2], cam.down[0], cam.down[1], cam.down[2], cam.forward[0], cam.forward[1], cam.forward[2]);
@@ -1582,7 +1707,7 @@ int main() {
 
             VkDeviceSize offset  = 0;
 
-            vkCmdPushConstants(globs.cmd_bufs[frame_index], globs.gripeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, camera_data_size, camera_data);
+            vkCmdBindDescriptorSets(globs.cmd_bufs[frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, globs.gripeline_layout, 0, 1, &globs.descriptor_sets[frame_index], 0, NULL);
             vkCmdBindVertexBuffers(globs.cmd_bufs[frame_index], 0, 1, &globs.vertex_buffer.buffer, &offset);
                     
             vkCmdDraw(globs.cmd_bufs[frame_index], num_vertices, 1, 0, 0);

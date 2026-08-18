@@ -5,7 +5,7 @@ layout(location = 1) in vec3 incolor;
 
 layout(location = 0) out vec3 outcolor;
 
-layout(push_constant) uniform camera {
+layout(binding = 0) uniform readonly camera {
     mat4 view;
     mat4 proj;
 } cam;
