@@ -506,7 +506,7 @@ struct vk_buffer {
     VkDeviceMemory memory;
 };
 
-bool create_buffer(VkDevice device, uint32_t queue_family_index, VkDeviceSize size, VkBufferUsageFlags usage, struct vk_buffer* buffer) {
+bool create_buffer(VkDevice device, uint32_t host_coherent_mask, uint32_t host_cached_mask, uint32_t queue_family_index, VkDeviceSize size, VkBufferUsageFlags usage, struct vk_buffer* buffer) {
     VkBufferCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .pNext = NULL,
@@ -526,16 +526,27 @@ bool create_buffer(VkDevice device, uint32_t queue_family_index, VkDeviceSize si
     VkMemoryRequirements mem_reqs;
     vkGetBufferMemoryRequirements(device, buffer->buffer, &mem_reqs);
 
-    if(!(mem_reqs.memoryTypeBits & 0x02)) {
-        fprintf(stderr, "cannot allocate buffer on mem type 1\n");
+    uint32_t mem_types = mem_reqs.memoryTypeBits & host_coherent_mask & host_cached_mask;
+
+    if(mem_types == 0)
+        mem_types = mem_reqs.memoryTypeBits & host_coherent_mask;
+
+    if(mem_types == 0) {
+        fprintf(stderr, "Cannot allocate buffer as no host-coherent memory type found!\n");
         return false;
+    }
+
+    uint32_t idx = 0;
+    while((mem_types & 0x1) == 0) {
+        mem_types >>= 1;
+        idx ++;
     }
 
     VkMemoryAllocateInfo alloc_info = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .pNext = NULL,
         .allocationSize = mem_reqs.size,
-        .memoryTypeIndex = 0x02,
+        .memoryTypeIndex = idx,
     };
 
     if(vkAllocateMemory(device, &alloc_info, NULL, &buffer->memory) != VK_SUCCESS) {
@@ -561,6 +572,8 @@ struct globals {
     VkDebugUtilsMessengerEXT debug_messenger;
     VkPhysicalDevice physical_device;
     uint32_t queue_family_index;
+    uint32_t host_coherent_mask;
+    uint32_t host_cached_mask;
     VkDevice device;
     VkQueue queue;
     struct window wnd;
@@ -940,6 +953,25 @@ int main() {
         free(physical_devices);
     }
 
+    // Get different memory type masks
+    {
+        VkPhysicalDeviceMemoryProperties2 mem_props = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
+            .pNext = NULL,
+            .memoryProperties = (VkPhysicalDeviceMemoryProperties) {0},
+        };
+
+        vkGetPhysicalDeviceMemoryProperties2(globs.physical_device, &mem_props);
+
+        for(uint32_t i=0; i<VK_MAX_MEMORY_TYPES; i++) {
+            if(mem_props.memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                globs.host_coherent_mask |= (1 << i);
+
+            if(mem_props.memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+                globs.host_cached_mask |= (1 << i);
+        }
+    }
+
     // Create Device
     {
         float one = 1.f;
@@ -1219,17 +1251,27 @@ int main() {
         VkMemoryRequirements mem_reqs;
         vkGetImageMemoryRequirements(globs.device, globs.depth_buffer, &mem_reqs);
 
-        if(!(mem_reqs.memoryTypeBits & 0x02)) {
-            fprintf(stderr, "cannot allocate depth buffer on mem type 1\n");
-            destroy_globals(&globs);
-            return 1;
+        uint32_t mem_types = mem_reqs.memoryTypeBits & globs.host_coherent_mask & globs.host_cached_mask;
+
+        if(mem_types == 0)
+            mem_types = mem_reqs.memoryTypeBits & globs.host_coherent_mask;
+
+        if(mem_types == 0) {
+            fprintf(stderr, "Cannot allocate depth buffer as no host-coherent memory type found!\n");
+            return false;
+        }
+
+        uint32_t idx = 0;
+        while((mem_types & 0x1) == 0) {
+            mem_types >>= 1;
+            idx ++;
         }
 
         VkMemoryAllocateInfo alloc_info = {
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
             .pNext = NULL,
             .allocationSize = mem_reqs.size,
-            .memoryTypeIndex = 0x02,
+            .memoryTypeIndex = idx,
         };
 
         vkAllocateMemory(globs.device, &alloc_info, NULL, &globs.depth_mem);
@@ -1299,7 +1341,7 @@ int main() {
 
     // create buffers
     {
-        if(!create_buffer(globs.device, globs.queue_family_index, vertex_data_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &globs.vertex_buffer)) {
+        if(!create_buffer(globs.device, globs.host_coherent_mask, globs.host_cached_mask, globs.queue_family_index, vertex_data_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &globs.vertex_buffer)) {
             fprintf(stderr, "vertex buffer create error!\n");
             destroy_globals(&globs);
             return 1;
