@@ -352,13 +352,7 @@ bool load_shader(VkDevice device, const char* shader_file, VkShaderModule* modul
     return result;
 }
 
-struct graphics_pipeline {
-    VkPipelineLayout layout;
-    VkRenderPass render_pass;
-    VkPipeline pipeline;
-};
-
-bool create_graphics_pipeline(VkDevice device, const char* vertf, const char* fragf, const struct vk_swapchain* swapchain, const VkPipelineVertexInputStateCreateInfo* vertex_input_state, const VkPushConstantRange* push_const_range, struct graphics_pipeline* gripeline) {
+bool create_graphics_pipeline(VkDevice device, const char* vertf, const char* fragf, const struct vk_swapchain* swapchain, const VkPipelineVertexInputStateCreateInfo* vertex_input_state, const VkPipelineLayout layout, VkPipeline* gripeline) {
     VkShaderModule modules[2] = {0};
     if(!load_shader(device, vertf, &modules[0]))
         return false;
@@ -463,18 +457,6 @@ bool create_graphics_pipeline(VkDevice device, const char* vertf, const char* fr
         .blendConstants = {0.f, 0.f, 0.f, 0.f}
     };
 
-    VkPipelineLayoutCreateInfo layout_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .setLayoutCount = 0,
-        .pSetLayouts = NULL, 
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = push_const_range,
-    };
-
-    vkCreatePipelineLayout(device, &layout_info, NULL, &gripeline->layout);
-
     VkPipelineRenderingCreateInfo render_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .pNext = NULL,
@@ -500,14 +482,14 @@ bool create_graphics_pipeline(VkDevice device, const char* vertf, const char* fr
         .pDepthStencilState = &depth_stencil_state,
         .pColorBlendState = &color_blend_state,
         .pDynamicState = NULL,
-        .layout = gripeline->layout,
+        .layout = layout,
         .renderPass = VK_NULL_HANDLE,
         .subpass = 0,
         .basePipelineHandle = VK_NULL_HANDLE,
         .basePipelineIndex = 0,
     };
 
-    if(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &create_info, NULL, &gripeline->pipeline) != VK_SUCCESS) {
+    if(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &create_info, NULL, gripeline) != VK_SUCCESS) {
         fprintf(stderr, "Graphics Pipeline create fail!\n");
         vkDestroyShaderModule(device, modules[0], NULL);
         vkDestroyShaderModule(device, modules[1], NULL);
@@ -517,17 +499,6 @@ bool create_graphics_pipeline(VkDevice device, const char* vertf, const char* fr
     vkDestroyShaderModule(device, modules[0], NULL);
     vkDestroyShaderModule(device, modules[1], NULL);
     return true;
-}
-
-void destroy_graphics_pipeline(VkDevice device, struct graphics_pipeline* gripeline) {
-    if(gripeline->pipeline)
-        vkDestroyPipeline(device, gripeline->pipeline, NULL);
-
-    if(gripeline->render_pass)
-        vkDestroyRenderPass(device, gripeline->render_pass, NULL);
-
-    if(gripeline->layout)
-        vkDestroyPipelineLayout(device, gripeline->layout, NULL);
 }
 
 struct vk_buffer {
@@ -596,7 +567,8 @@ struct globals {
     VkSurfaceKHR vk_surface;
     struct vk_swapchain swapchain;
     struct keyboard_data keydata;
-    struct graphics_pipeline gripeline;
+    VkPipelineLayout gripeline_layout;
+    VkPipeline gripeline;
     VkCommandPool command_pool;
     uint32_t frames_in_flight;
     VkCommandBuffer* cmd_bufs;
@@ -649,7 +621,12 @@ void destroy_globals(struct globals* stuff) {
     if(stuff->command_pool)
         vkDestroyCommandPool(stuff->device, stuff->command_pool, NULL);
 
-    destroy_graphics_pipeline(stuff->device, &stuff->gripeline);
+    if(stuff->gripeline)
+        vkDestroyPipeline(stuff->device, stuff->gripeline, NULL);
+
+    if(stuff->gripeline_layout) 
+        vkDestroyPipelineLayout(stuff->device, stuff->gripeline_layout, NULL);
+
     destroy_swapchain(stuff->device, &stuff->swapchain);
 
     if(stuff->vk_surface)
@@ -1100,7 +1077,23 @@ int main() {
         snprintf(vert_fpath, 256, "%s%s", SHADER_DIR, "vert.spv");
         snprintf(frag_fpath, 256, "%s%s", SHADER_DIR, "frag.spv");
 
-        if(!create_graphics_pipeline(globs.device, vert_fpath, frag_fpath, &globs.swapchain, &vertex_input_state, &push_constant_range, &globs.gripeline)) {
+        VkPipelineLayoutCreateInfo layout_info = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .setLayoutCount = 0,
+            .pSetLayouts = NULL,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &push_constant_range,
+        };
+
+        if(vkCreatePipelineLayout(globs.device, &layout_info, NULL, &globs.gripeline_layout) != VK_SUCCESS) {
+            fprintf(stderr, "Could not create graphics pipeline layout!\n");
+            destroy_globals(&globs);
+            return 1;
+        }
+
+        if(!create_graphics_pipeline(globs.device, vert_fpath, frag_fpath, &globs.swapchain, &vertex_input_state, globs.gripeline_layout, &globs.gripeline)) {
             destroy_globals(&globs);
             return 1;
         }
@@ -1386,8 +1379,8 @@ int main() {
         clock_gettime(CLOCK_MONOTONIC, &frame_start_time);
 
         float delta_time = frame_start_time.tv_sec - time.tv_sec + (frame_start_time.tv_nsec - time.tv_nsec)/1e9f;
-        float fps = 1.0f / delta_time;
-        printf("fps: %f\n", fps);
+        //float fps = 1.0f / delta_time;
+        //printf("fps: %f\n", fps);
 
         time = frame_start_time;
 
@@ -1415,8 +1408,8 @@ int main() {
 
         build_view_matrix(camera_data, &cam);
 
-        printf("(%f, %f, %f)\n", cam.pos[0], cam.pos[1], cam.pos[2]);
-        printf("(%f, %f, %f)r\n(%f, %f, %f)d\n(%f, %f, %f)f\n", cam.right[0], cam.right[1], cam.right[2], cam.down[0], cam.down[1], cam.down[2], cam.forward[0], cam.forward[1], cam.forward[2]);
+        //printf("(%f, %f, %f)\n", cam.pos[0], cam.pos[1], cam.pos[2]);
+        //printf("(%f, %f, %f)r\n(%f, %f, %f)d\n(%f, %f, %f)f\n", cam.right[0], cam.right[1], cam.right[2], cam.down[0], cam.down[1], cam.down[2], cam.forward[0], cam.forward[1], cam.forward[2]);
 
         // Wait for current frame to be free..
         (void) vkWaitForFences(globs.device, 1, &globs.frame_finished_fences[frame_index], VK_TRUE, UINT64_MAX);
@@ -1543,11 +1536,11 @@ int main() {
         vkCmdPipelineBarrier2(globs.cmd_bufs[frame_index], &color_attach_barrier_dep_info);
 
         vkCmdBeginRendering(globs.cmd_bufs[frame_index], &rendering_info);
-            vkCmdBindPipeline(globs.cmd_bufs[frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, globs.gripeline.pipeline);
+            vkCmdBindPipeline(globs.cmd_bufs[frame_index], VK_PIPELINE_BIND_POINT_GRAPHICS, globs.gripeline);
 
             VkDeviceSize offset  = 0;
 
-            vkCmdPushConstants(globs.cmd_bufs[frame_index], globs.gripeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, camera_data_size, camera_data);
+            vkCmdPushConstants(globs.cmd_bufs[frame_index], globs.gripeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, camera_data_size, camera_data);
             vkCmdBindVertexBuffers(globs.cmd_bufs[frame_index], 0, 1, &globs.vertex_buffer.buffer, &offset);
                     
             vkCmdDraw(globs.cmd_bufs[frame_index], num_vertices, 1, 0, 0);
