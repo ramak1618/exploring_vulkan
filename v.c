@@ -571,6 +571,7 @@ struct globals {
     VkInstance instance;
     VkDebugUtilsMessengerEXT debug_messenger;
     VkPhysicalDevice physical_device;
+    VkDeviceSize min_uniform_buf_offset; 
     uint32_t queue_family_index;
     uint32_t host_coherent_mask;
     uint32_t host_cached_mask;
@@ -954,6 +955,7 @@ int main() {
 
         globs.physical_device = physical_devices[idx];
         globs.queue_family_index = qfi[idx];
+        globs.min_uniform_buf_offset = dev_props[idx].properties.limits.minUniformBufferOffsetAlignment;
 
         printf("Chosen Physical Device: %s\n", dev_props[idx].properties.deviceName);
         printf("Press ENTER to continue");
@@ -1040,37 +1042,9 @@ int main() {
         return 1;
     }
 
-    // Camera
-    float F = 100.f;
-    float N = 0.1f;
-    float f = 1.0f;
-
-    float aspect_ratio = (float) globs.swapchain.extent.width / (float) globs.swapchain.extent.height;
-    float vp_h = 2.0f;
-    float vp_w = aspect_ratio * vp_h;
-    float vp_ws = 2.0f / vp_w;
-    float vp_hs = 2.0f / vp_h;
-    
-    //float aaaa = 1/sqrt(2);
-    struct camera cam = {
-        {0.f, 0.f, -3.f},
-        {1.f, 0.f, 0.f},
-        {0.f, 1.f, 0.f},
-        {0.f, 0.f, 1.f}
-    };
-
-    float camera_data[] = {
-        1.f, 0.f, 0.f, 0.f,
-        0.f, 1.f, 0.f, 0.f,
-        0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 0.f, 1.f,
-
-         vp_ws*f,    0.0f,        0.0f,        0.0f,
-           0.0f,    vp_hs*f,      0.0f,        0.0f,
-           0.0f,     0.0f,       F/(F-N),      1.0f,
-           0.0f,     0.0f,     -N*F/(F-N),     0.0f,
-    };
-    uint32_t camera_data_size = 32 * 4;
+    uint32_t camera_data_size = 34 * 4;
+    uint32_t camera_data_padd = (globs.min_uniform_buf_offset - (camera_data_size % globs.min_uniform_buf_offset)) % globs.min_uniform_buf_offset;
+    camera_data_size += camera_data_padd;
 
     uint32_t vertex_size = 6*4;
     uint32_t num_vertices = 1000 * 100;
@@ -1519,6 +1493,23 @@ int main() {
         }
     }
 
+    // camera data
+    float F = 100.f;
+    float N = 0.1f;
+    float f = 1.0f;
+
+    float aspect_ratio = (float) globs.swapchain.extent.width / (float) globs.swapchain.extent.height;
+    float vp_h = 2.0f;
+    float vp_w = aspect_ratio * vp_h;
+    float vp_ws = 2.0f / vp_w;
+    float vp_hs = 2.0f / vp_h;
+
+    struct camera cam = {
+        {0.f, 0.f, -3.f},
+        {1.f, 0.f, 0.f},
+        {0.f, 1.f, 0.f},
+        {0.f, 0.f, 1.f}
+    };
 
     // MAIN LOOP
     uint32_t frame_index = 0;
@@ -1535,9 +1526,19 @@ int main() {
     bool key_heldmap[NUM_CAM_MOVES] = {0};
 
     void* rawp_camera_buffer = NULL;
-    vkMapMemory(globs.device, globs.camera_buffer.memory, 0, camera_data_size * globs.frames_in_flight, 0, &rawp_camera_buffer);
-    for(uint32_t i=0; i<globs.frames_in_flight; i++)
-        memcpy((uint8_t*)(rawp_camera_buffer)+i*camera_data_size, camera_data, camera_data_size);
+    {
+        vkMapMemory(globs.device, globs.camera_buffer.memory, 0, camera_data_size * globs.frames_in_flight, 0, &rawp_camera_buffer);
+        float proj[] = {
+             vp_ws*f,    0.0f,        0.0f,        0.0f,
+               0.0f,    vp_hs*f,      0.0f,        0.0f,
+               0.0f,     0.0f,       F/(F-N),      1.0f,
+               0.0f,     0.0f,     -N*F/(F-N),     0.0f,
+        };
+        for(uint32_t i=0; i<globs.frames_in_flight; i++) {
+            void* camera_projmat_ptr = (char*)rawp_camera_buffer + i*camera_data_size;
+            memcpy((float*)(camera_projmat_ptr) + 16, proj, 4 * 16);
+        }
+    }
 
     while(globs.wnd.running && wl_display_dispatch_pending(globs.wnd.display) != -1) {
         // calculate FPS
