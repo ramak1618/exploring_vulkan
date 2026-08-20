@@ -1042,12 +1042,14 @@ int main() {
         return 1;
     }
 
+    // REMEMBER TO UPDATE CAMERA BUFFER CHANGES HERE
     uint32_t camera_data_size = 34 * 4;
     uint32_t camera_data_padd = (globs.min_uniform_buf_offset - (camera_data_size % globs.min_uniform_buf_offset)) % globs.min_uniform_buf_offset;
     camera_data_size += camera_data_padd;
 
-    uint32_t vertex_size = 6*4;
-    uint32_t num_vertices = 1000 * 100;
+    // REMEMBER TO UPDATE VERTEX SHADER CHANGES HERE
+    uint32_t vertex_size = 9*4;
+    uint32_t num_vertices = 1000;
     uint32_t vertex_data_size = num_vertices * vertex_size;
  
     {
@@ -1073,6 +1075,12 @@ int main() {
                 .format = VK_FORMAT_R32G32B32_SFLOAT,
                 .offset = 3*4,
             },
+            {
+                .location = 2,
+                .binding = 0,
+                .format = VK_FORMAT_R32G32B32_SFLOAT,
+                .offset = 3*4 + 3*4,
+            },
         };
 
         VkPipelineVertexInputStateCreateInfo vertex_input_state = {
@@ -1081,7 +1089,7 @@ int main() {
             .flags = 0,
             .vertexBindingDescriptionCount = 1,
             .pVertexBindingDescriptions = vertex_binding_desc,
-            .vertexAttributeDescriptionCount = 2,
+            .vertexAttributeDescriptionCount = 3,
             .pVertexAttributeDescriptions = vertex_attr_desc,
         };
 
@@ -1380,16 +1388,35 @@ int main() {
         float R = 2.0f;
         float a = 1.0f;
 
+        float surface_area = (2 * pi * R) * (pi * a * a);
+        float particle_area = surface_area / num_vertices;
+
         for(uint32_t i=0; i<num_vertices; i++) {
             float theta = uniform_unit_float(&rng) * 2.f * pi;
             float phi =  uniform_unit_float(&rng) * 2.f * pi;
 
-            data[6*i + 0] =  R*cosf(phi) + a*cosf(theta)*cosf(phi);
-            data[6*i + 1] =  R*sinf(phi) + a*cosf(theta)*sinf(phi);
-            data[6*i + 2] =  a*sinf(theta);
-            data[6*i + 3] =  log1pf( (cosf(phi)*cosf(theta) + 1.f) * 0.5f );
-            data[6*i + 4] =  log1pf( (sinf(phi)*cosf(theta) + 1.f) * 0.5f );
-            data[6*i + 5] =  log1pf( (sinf(theta) + 1.f) * 0.5f ) ;
+
+
+            /*
+            data[9*i + 0] =  R*cosf(phi) + a*cosf(theta)*cosf(phi);
+            data[9*i + 1] =  R*sinf(phi) + a*cosf(theta)*sinf(phi);
+            data[9*i + 2] =  a*sinf(theta);
+            data[9*i + 3] =  log1pf( (cosf(phi)*cosf(theta) + 1.f) * 0.5f );
+            data[9*i + 4] =  log1pf( (sinf(phi)*cosf(theta) + 1.f) * 0.5f );
+            data[9*i + 5] =  log1pf( (sinf(theta) + 1.f) * 0.5f ) ;
+            data[9*i + 6] =  particle_area * cosf(phi)*cosf(theta);
+            data[9*i + 7] =  particle_area * sinf(phi)*cosf(theta);
+            data[9*i + 8] =  particle_area * sinf(theta);
+            */
+            data[9*i + 0] =  R*cosf(phi);
+            data[9*i + 1] =  R*sinf(phi);
+            data[9*i + 2] =  theta;
+            data[9*i + 3] =  log1pf( (cosf(phi)*cosf(theta) + 1.f) * 0.5f );
+            data[9*i + 4] =  log1pf( (sinf(phi)*cosf(theta) + 1.f) * 0.5f );
+            data[9*i + 5] =  log1pf( (sinf(theta) + 1.f) * 0.5f ) ;
+            data[9*i + 6] =  particle_area * cosf(phi);
+            data[9*i + 7] =  particle_area * sinf(phi);
+            data[9*i + 8] =  0;
         }
 
         vkUnmapMemory(globs.device, globs.vertex_buffer.memory);
@@ -1534,9 +1561,14 @@ int main() {
                0.0f,     0.0f,       F/(F-N),      1.0f,
                0.0f,     0.0f,     -N*F/(F-N),     0.0f,
         };
+        float screen[] = {
+            (float) globs.swapchain.extent.width, (float) globs.swapchain.extent.height,
+        };
+
         for(uint32_t i=0; i<globs.frames_in_flight; i++) {
-            void* camera_projmat_ptr = (char*)rawp_camera_buffer + i*camera_data_size;
-            memcpy((float*)(camera_projmat_ptr) + 16, proj, 4 * 16);
+            void* camera_data_ptr = (char*)rawp_camera_buffer + i*camera_data_size;
+            memcpy((float*)(camera_data_ptr) + 16, proj, 4 * 16);
+            memcpy((float*)(camera_data_ptr) + 32, screen, 4 * 2);
         }
     }
 
