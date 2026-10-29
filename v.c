@@ -1790,6 +1790,9 @@ int main() {
         // Update frame index
         frame_index = (frame_index + 1) % globs.frames_in_flight;
 
+        // read new events:
+        wl_display_prepare_read(globs.wnd.display);
+        wl_display_read_events(globs.wnd.display);
 
         // cap fps
         struct timespec frame_end_time;
