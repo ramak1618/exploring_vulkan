@@ -239,15 +239,33 @@ struct vk_swapchain {
 };
 
 bool create_swapchain(VkPhysicalDevice physical_device, VkDevice device, uint32_t queue_family_index, VkSurfaceKHR vk_surface, uint32_t width, uint32_t height, struct vk_swapchain* swapchain) {
-    VkSurfaceCapabilitiesKHR surface_caps = {0};
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, vk_surface, &surface_caps);
+    VkSurfacePresentModeKHR presinfo = {
+        .sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_KHR,
+        .pNext = NULL,
+        .presentMode = VK_PRESENT_MODE_MAILBOX_KHR,
+    };
+
+    VkPhysicalDeviceSurfaceInfo2KHR surfinfo = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR,
+        .pNext = &presinfo,
+        .surface = vk_surface,
+    };
+
+    VkSurfaceCapabilities2KHR surfcaps2 = {
+        .sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR,
+        .pNext = NULL,
+        .surfaceCapabilities = {0},
+    };
+
+    vkGetPhysicalDeviceSurfaceCapabilities2KHR(physical_device, &surfinfo, &surfcaps2);
+
 
     VkSwapchainCreateInfoKHR create_info = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .pNext = NULL,
         .flags = 0,
         .surface = vk_surface,
-        .minImageCount = surface_caps.minImageCount,
+        .minImageCount = surfcaps2.surfaceCapabilities.minImageCount,
         .imageFormat = VK_FORMAT_R8G8B8A8_SRGB,
         .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
         .imageExtent = (VkExtent2D) {width, height},
@@ -258,7 +276,7 @@ bool create_swapchain(VkPhysicalDevice physical_device, VkDevice device, uint32_
         .pQueueFamilyIndices = &queue_family_index,
         .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = VK_PRESENT_MODE_MAILBOX_KHR,
+        .presentMode = presinfo.presentMode,
         .clipped = VK_TRUE,
         .oldSwapchain = VK_NULL_HANDLE,
     };
@@ -716,7 +734,7 @@ int main() {
             .apiVersion = VK_API_VERSION_1_4,
         };
         const char* layers[] = {"VK_LAYER_KHRONOS_validation"};
-        const char* extensions[] = {"VK_KHR_surface", "VK_KHR_wayland_surface", "VK_EXT_debug_utils"};
+        const char* extensions[] = {"VK_KHR_surface", "VK_KHR_get_surface_capabilities2", "VK_KHR_surface_maintenance1", "VK_KHR_wayland_surface", "VK_EXT_debug_utils"};
 
         VkDebugUtilsMessengerCreateInfoEXT debug_info = {
             .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
@@ -735,7 +753,7 @@ int main() {
             .pApplicationInfo = &app_info,
             .enabledLayerCount = 0,
             .ppEnabledLayerNames = layers,
-            .enabledExtensionCount = 2,
+            .enabledExtensionCount = 4,
             .ppEnabledExtensionNames = extensions,
         };
 
